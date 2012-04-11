@@ -108,13 +108,6 @@ void __cpuinit platform_secondary_init(unsigned int cpu)
 	WARN_ON(msm_platform_secondary_init(cpu));
 
 	/*
-	 * if any interrupts are already enabled for the primary
-	 * core (e.g. timer irq), then they will not have been enabled
-	 * for us: do so
-	 */
-	gic_secondary_init(0);
-
-	/*
 	 * let the primary processor know we're out of the
 	 * pen, then head off into the C entry point
 	 */
@@ -220,7 +213,7 @@ int __cpuinit boot_secondary(unsigned int cpu, struct task_struct *idle)
 		gic_configure_and_raise(cpu_data[cpu].ipc_irq, cpu);
 		raise_clear_spi(cpu, true);
 	} else {
-		gic_raise_softirq(cpumask_of(cpu), 1);
+		arch_send_wakeup_ipi_mask(cpumask_of(cpu));
 	}
 
 	timeout = jiffies + (1 * HZ);
@@ -255,8 +248,6 @@ void __init smp_init_cpus(void)
 
 	for (i = 0; i < ncores; i++)
 		set_cpu_possible(i, true);
-
-	set_smp_cross_call(gic_raise_softirq);
 }
 
 static void per_cpu_data(unsigned int cpu, unsigned int off,

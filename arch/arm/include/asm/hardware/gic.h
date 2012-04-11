@@ -42,17 +42,16 @@ extern struct irq_chip gic_arch_extn;
 void gic_init_bases(unsigned int, int, void __iomem *, void __iomem *,
 		    u32 offset, struct device_node *);
 int gic_of_init(struct device_node *node, struct device_node *parent);
-void gic_secondary_init(unsigned int);
 void gic_handle_irq(struct pt_regs *regs);
 void gic_cascade_irq(unsigned int gic_nr, unsigned int irq);
-void gic_raise_softirq(const struct cpumask *mask, unsigned int irq);
+void gic_cpu_if_down(void);
 bool gic_is_irq_pending(unsigned int irq);
 void gic_clear_irq_pending(unsigned int irq);
 #ifdef CONFIG_ARM_GIC
 void gic_set_irq_secure(unsigned int irq);
 #else
 static inline void gic_set_irq_secure(unsigned int irq) { }
-#endif
+#endif /* CONFIG_ARM_GIC */
 static inline void gic_init(unsigned int nr, int start,
 			    void __iomem *dist , void __iomem *cpu)
 {
@@ -63,6 +62,6 @@ void gic_set_irq_secure(unsigned int irq);
 void msm_gic_save(void);
 void msm_gic_restore(void);
 void gic_configure_and_raise(unsigned int irq, unsigned int cpu);
-#endif
+#endif /* __ASSEMBLY */
 
-#endif
+#endif /* __ASM_ARM_HARDWARE_GIC_H */
