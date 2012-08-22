@@ -53,6 +53,15 @@ int msm_spm_set_vdd(unsigned int cpu, unsigned int vlevel)
 }
 EXPORT_SYMBOL(msm_spm_set_vdd);
 
+unsigned int msm_spm_get_vdd(unsigned int cpu)
+{
+	struct msm_spm_device *dev;
+
+	dev = &per_cpu(msm_cpu_spm_device, cpu);
+	return msm_spm_drv_get_sts_curr_pmic_data(&dev->reg_data);
+}
+EXPORT_SYMBOL(msm_spm_get_vdd);
+
 static int msm_spm_dev_set_low_power_mode(struct msm_spm_device *dev,
 		unsigned int mode, bool notify_rpm)
 {
@@ -247,10 +256,10 @@ static int __devinit msm_spm_dev_probe(struct platform_device *pdev)
 		{"qcom,saw2-cfg", MSM_SPM_REG_SAW2_CFG},
 		{"qcom,saw2-avs-ctl", MSM_SPM_REG_SAW2_AVS_CTL},
 		{"qcom,saw2-avs-hysteresis", MSM_SPM_REG_SAW2_AVS_HYSTERESIS},
-		{"qcom,saw2-spm-ctl", MSM_SPM_REG_SAW2_SPM_CTL},
-		{"qcom,saw2-pmic-dly", MSM_SPM_REG_SAW2_PMIC_DLY},
 		{"qcom,saw2-avs-limit", MSM_SPM_REG_SAW2_AVS_LIMIT},
+		{"qcom,saw2-avs-dly", MSM_SPM_REG_SAW2_AVS_DLY},
 		{"qcom,saw2-spm-dly", MSM_SPM_REG_SAW2_SPM_DLY},
+		{"qcom,saw2-spm-ctl", MSM_SPM_REG_SAW2_SPM_CTL},
 		{"qcom,saw2-pmic-data0", MSM_SPM_REG_SAW2_PMIC_DATA_0},
 		{"qcom,saw2-pmic-data1", MSM_SPM_REG_SAW2_PMIC_DATA_1},
 		{"qcom,saw2-pmic-data2", MSM_SPM_REG_SAW2_PMIC_DATA_2},

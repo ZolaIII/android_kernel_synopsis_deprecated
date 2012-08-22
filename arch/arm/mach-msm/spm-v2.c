@@ -1,4 +1,4 @@
-/* Copyright (c) 2011-2012, Code Aurora Forum. All rights reserved.
+/* Copyright (c) 2011-2013, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -152,8 +152,8 @@ static inline void msm_spm_drv_set_vctl2(struct msm_spm_driver_data *dev,
 	dev->reg_shadow[MSM_SPM_REG_SAW2_VCTL] &= ~0x700FF;
 	dev->reg_shadow[MSM_SPM_REG_SAW2_VCTL] |= pmic_data;
 
-	dev->reg_shadow[MSM_SPM_REG_SAW2_PMIC_DATA_0] &= ~0x700FF;
-	dev->reg_shadow[MSM_SPM_REG_SAW2_PMIC_DATA_0] |= pmic_data;
+	dev->reg_shadow[MSM_SPM_REG_SAW2_PMIC_DATA_3] &= ~0x700FF;
+	dev->reg_shadow[MSM_SPM_REG_SAW2_PMIC_DATA_3] |= pmic_data;
 }
 
 static inline void msm_spm_drv_apcs_set_vctl(struct msm_spm_driver_data *dev,
@@ -178,7 +178,7 @@ static inline uint32_t msm_spm_drv_get_sts_pmic_state(
 	}
 }
 
-static inline uint32_t msm_spm_drv_get_sts_curr_pmic_data(
+uint32_t msm_spm_drv_get_sts_curr_pmic_data(
 		struct msm_spm_driver_data *dev)
 {
 	if (dev->major == SAW2_MAJOR_2) {
