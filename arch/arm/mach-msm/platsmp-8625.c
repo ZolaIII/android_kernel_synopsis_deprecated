@@ -1,4 +1,4 @@
-/* Copyright (c) 2012, Code Aurora Forum. All rights reserved.
+/* Copyright (c) 2012, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -28,19 +28,28 @@
 #include <mach/msm_iomap.h>
 #include "pm.h"
 
-#define MSM_CORE1_RESET		0xA8600590
-#define MSM_CORE1_STATUS_MSK	0x02800000
+#define CORE_RESET_BASE		0xA8600590
+#define MSM_CORE_STATUS_MSK	0x02800000
 
 /*
  * control for which core is the next to come out of the secondary
  * boot "holding pen"
  */
-int pen_release = -1;
+volatile int pen_release = -1;
 
-static bool cold_boot_done;
+static DEFINE_PER_CPU(bool, cold_boot_done);
+
+struct per_cpu_data {
+	unsigned int reset_off;
+	unsigned int offset;
+	unsigned int ipc_irq;
+	void __iomem *reset_core_base;
+};
 
 static uint32_t *msm8625_boot_vector;
-static void __iomem *reset_core1_base;
+
+
+static struct per_cpu_data cpu_data[CONFIG_NR_CPUS];
 
 /*
  * Write pen_release in a way that is guaranteed to be visible to all
@@ -65,7 +74,8 @@ static DEFINE_SPINLOCK(boot_lock);
 /*
  * MP_CORE_IPC will be used to generate interrupt and can be used by either
  * of core.
- * To bring core1 out of GDFS we need to raise the SPI using the MP_CORE_IPC.
+ * To bring secondary cores out of GDFS we need to raise the SPI using the
+ * MP_CORE_IPC.
  */
 static void raise_clear_spi(unsigned int cpu, bool set)
 {
@@ -110,11 +120,11 @@ void __cpuinit platform_secondary_init(unsigned int cpu)
 	 */
 	write_pen_release(-1);
 
-	/* clear the IPC1(SPI-8) pending SPI */
-	if (power_collapsed) {
-		raise_clear_spi(1, false);
-		clear_pending_spi(MSM8625_INT_ACSR_MP_CORE_IPC1);
-		power_collapsed = 0;
+	/* clear the IPC pending SPI */
+	if (per_cpu(power_collapsed, cpu)) {
+		raise_clear_spi(cpu, false);
+		clear_pending_spi(cpu_data[cpu].ipc_irq);
+		per_cpu(power_collapsed, cpu) = 0;
 	}
 
 	/*
@@ -124,7 +134,7 @@ void __cpuinit platform_secondary_init(unsigned int cpu)
 	spin_unlock(&boot_lock);
 }
 
-static int  __cpuinit msm8625_release_secondary(void)
+static int  __cpuinit msm8625_release_secondary(unsigned int cpu)
 {
 	void __iomem *base_ptr;
 	int value = 0;
@@ -137,33 +147,35 @@ static int  __cpuinit msm8625_release_secondary(void)
 	 */
 	timeout = jiffies + usecs_to_jiffies(20);
 	while (time_before(jiffies, timeout)) {
-		value = __raw_readl(MSM_CFG_CTL_BASE + 0x3c);
-		if ((value & MSM_CORE1_STATUS_MSK) ==
-				MSM_CORE1_STATUS_MSK)
+		value = __raw_readl(MSM_CFG_CTL_BASE + cpu_data[cpu].offset);
+		if ((value & MSM_CORE_STATUS_MSK) ==
+				MSM_CORE_STATUS_MSK)
 			break;
 			udelay(1);
 	}
 
 	if (!value) {
-		pr_err("Core 1 cannot be brought out of Reset!!!\n");
+		pr_err("Core %u cannot be brought out of Reset!!!\n", cpu);
 		return -ENODEV;
 	}
 
-	base_ptr = ioremap_nocache(MSM_CORE1_RESET, SZ_4);
+	base_ptr = ioremap_nocache(CORE_RESET_BASE +
+			cpu_data[cpu].reset_off, SZ_4);
 	if (!base_ptr)
 		return -ENODEV;
-	/* Reset core 1 out of reset */
+
+	/* Reset core out of reset */
 	__raw_writel(0x0, base_ptr);
 	mb();
 
-	reset_core1_base = base_ptr;
+	cpu_data[cpu].reset_core_base = base_ptr;
 
 	return 0;
 }
 
 void __iomem *core1_reset_base(void)
 {
-	return reset_core1_base;
+	return cpu_data[1].reset_core_base;
 }
 
 int __cpuinit boot_secondary(unsigned int cpu, struct task_struct *idle)
@@ -172,12 +184,12 @@ int __cpuinit boot_secondary(unsigned int cpu, struct task_struct *idle)
 
 	preset_lpj = loops_per_jiffy;
 
-	if (cold_boot_done == false) {
-		if (msm8625_release_secondary()) {
-			pr_err("Failed to release secondary core\n");
+	if (per_cpu(cold_boot_done, cpu) == false) {
+		if (msm8625_release_secondary(cpu)) {
+			pr_err("Failed to release core %u\n", cpu);
 			return -ENODEV;
 		}
-		cold_boot_done = true;
+		per_cpu(cold_boot_done, cpu) = true;
 	}
 
 	/*
@@ -200,13 +212,13 @@ int __cpuinit boot_secondary(unsigned int cpu, struct task_struct *idle)
 	 * and branch to the address found there.
 	 *
 	 * power_collapsed is the flag which will be updated for Powercollapse.
-	 * Once we are out of PC, as Core1 will be in the state of GDFS which
-	 * needs to be brought out by raising an SPI.
+	 * Once we are out of PC, as secondary cores will be in the state of
+	 * GDFS which needs to be brought out by raising an SPI.
 	 */
 
-	if (power_collapsed) {
-		core1_gic_configure_and_raise();
-		raise_clear_spi(1, true);
+	if (per_cpu(power_collapsed, cpu)) {
+		gic_configure_and_raise(cpu_data[cpu].ipc_irq, cpu);
+		raise_clear_spi(cpu, true);
 	} else {
 		gic_raise_softirq(cpumask_of(cpu), 1);
 	}
@@ -247,6 +259,34 @@ void __init smp_init_cpus(void)
 	set_smp_cross_call(gic_raise_softirq);
 }
 
+static void per_cpu_data(unsigned int cpu, unsigned int off,
+	unsigned int off1, unsigned int irq)
+{
+	cpu_data[cpu].reset_off = off;
+	cpu_data[cpu].offset    = off1;
+	cpu_data[cpu].ipc_irq   = irq;
+}
+
+static void enable_boot_remapper(unsigned long bit, unsigned int off)
+{
+	int value;
+
+	/* Enable boot remapper address */
+	value = __raw_readl(MSM_CFG_CTL_BASE + off);
+	__raw_writel(value | bit, MSM_CFG_CTL_BASE + off) ;
+	mb();
+}
+
+static void remapper_address(unsigned long phys, unsigned int off)
+{
+	/*
+	 * Write the address of secondary startup into the
+	 * boot remapper register. The secondary CPU branches to this address.
+	 */
+	__raw_writel(phys, (MSM_CFG_CTL_BASE + off));
+	mb();
+}
+
 static void __init msm8625_boot_vector_init(uint32_t *boot_vector,
 		unsigned long entry)
 {
@@ -260,8 +300,8 @@ static void __init msm8625_boot_vector_init(uint32_t *boot_vector,
 
 void __init platform_smp_prepare_cpus(unsigned int max_cpus)
 {
-	int i, value;
-	void __iomem *second_ptr;
+	int i, cpu;
+	void __iomem *cpu_ptr;
 
 	/*
 	 * Initialise the present map, which describes the set of CPUs
@@ -272,25 +312,28 @@ void __init platform_smp_prepare_cpus(unsigned int max_cpus)
 
 	scu_enable(scu_base_addr());
 
-	/*
-	 * Write the address of secondary startup into the
-	 * boot remapper register. The secondary CPU branches to this address.
-	 */
-	__raw_writel(MSM8625_SECONDARY_PHYS, (MSM_CFG_CTL_BASE + 0x34));
-	mb();
-
-	second_ptr = ioremap_nocache(MSM8625_SECONDARY_PHYS, SZ_8);
-	if (!second_ptr) {
-		pr_err("failed to ioremap for secondary core\n");
+	cpu_ptr = ioremap_nocache(MSM8625_CPU_PHYS, SZ_8);
+	if (!cpu_ptr) {
+		pr_err("failed to ioremap for secondary cores\n");
 		return;
 	}
 
-	msm8625_boot_vector_init(second_ptr,
+	msm8625_boot_vector_init(cpu_ptr,
 			virt_to_phys(msm_secondary_startup));
-	iounmap(second_ptr);
 
-	/* Enable boot remapper address: bit 26 for core1 */
-	value = __raw_readl(MSM_CFG_CTL_BASE + 0x30);
-	__raw_writel(value | (0x4 << 24), MSM_CFG_CTL_BASE + 0x30) ;
-	mb();
+	iounmap(cpu_ptr);
+
+	for_each_possible_cpu(cpu) {
+		switch (cpu) {
+		case 0:
+			break;
+		case 1:
+			remapper_address(MSM8625_CPU_PHYS, 0x34);
+			per_cpu_data(cpu, 0x0, 0x3c,
+					MSM8625_INT_ACSR_MP_CORE_IPC1);
+			enable_boot_remapper(BIT(26), 0x30);
+			break;
+		}
+
+	}
 }
