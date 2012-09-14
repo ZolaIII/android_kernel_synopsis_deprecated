@@ -112,12 +112,6 @@ static void early_suspend(struct work_struct *work)
 		}
 	}
 
-	/* set sample rate and up_threshold to the idle state value */
-#ifdef CONFIG_HUAWEI_KERNEL
-	set_sampling_rate(0);
-	set_up_threshold(0);
-#endif
-
 	mutex_unlock(&early_suspend_lock);
 
 	suspend_sys_sync_queue();
@@ -139,12 +133,6 @@ static void late_resume(struct work_struct *work)
 	int abort = 0;
 
 	mutex_lock(&early_suspend_lock);
-	/* set sample rate and up_threshold to non-idle state value */
-#ifdef CONFIG_HUAWEI_KERNEL
-	set_sampling_rate(1);
-	set_up_threshold(1);
-#endif
-    
 	spin_lock_irqsave(&state_lock, irqflags);
 	if (state == SUSPENDED)
 		state &= ~SUSPENDED;
