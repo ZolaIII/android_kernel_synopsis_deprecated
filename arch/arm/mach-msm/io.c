@@ -21,15 +21,15 @@
 #include <linux/init.h>
 #include <linux/io.h>
 #include <linux/export.h>
-
-#include <mach/hardware.h>
-#include <asm/page.h>
-#include <mach/msm_iomap.h>
-#include <mach/memory.h>
-#include <asm/mach/map.h>
 #include <linux/dma-mapping.h>
 
 #include <mach/board.h>
+#include <mach/hardware.h>
+#include <mach/msm_iomap.h>
+#include <mach/memory.h>
+
+#include <asm/page.h>
+#include <asm/mach/map.h>
 
 #define MSM_CHIP_DEVICE(name, chip) { \
 		.virtual = (unsigned long) MSM_##name##_BASE, \
