@@ -24,12 +24,6 @@
 
 static spinlock_t cpufreq_stats_lock;
 
-#define CPUFREQ_STATDEVICE_ATTR(_name, _mode, _show) \
-static struct freq_attr _attr_##_name = {\
-	.attr = {.name = __stringify(_name), .mode = _mode, }, \
-	.show = _show,\
-};
-
 struct cpufreq_stats {
 	unsigned int cpu;
 	unsigned int total_trans;
@@ -87,7 +81,7 @@ static ssize_t show_time_in_state(struct cpufreq_policy *policy, char *buf)
 	for (i = 0; i < stat->state_num; i++) {
 		len += sprintf(buf + len, "%u %llu\n", stat->freq_table[i],
 			(unsigned long long)
-			cputime64_to_clock_t(stat->time_in_state[i]));
+			jiffies_64_to_clock_t(stat->time_in_state[i]));
 	}
 	return len;
 }
@@ -136,17 +130,17 @@ static ssize_t show_trans_table(struct cpufreq_policy *policy, char *buf)
 		return PAGE_SIZE;
 	return len;
 }
-CPUFREQ_STATDEVICE_ATTR(trans_table, 0444, show_trans_table);
+cpufreq_freq_attr_ro(trans_table);
 #endif
 
-CPUFREQ_STATDEVICE_ATTR(total_trans, 0444, show_total_trans);
-CPUFREQ_STATDEVICE_ATTR(time_in_state, 0444, show_time_in_state);
+cpufreq_freq_attr_ro(total_trans);
+cpufreq_freq_attr_ro(time_in_state);
 
 static struct attribute *default_attrs[] = {
-	&_attr_total_trans.attr,
-	&_attr_time_in_state.attr,
+	&total_trans.attr,
+	&time_in_state.attr,
 #ifdef CONFIG_CPU_FREQ_STAT_DETAILS
-	&_attr_trans_table.attr,
+	&trans_table.attr,
 #endif
 	NULL
 };
@@ -183,10 +177,18 @@ static void cpufreq_stats_free_table(unsigned int cpu)
 static void cpufreq_stats_free_sysfs(unsigned int cpu)
 {
 	struct cpufreq_policy *policy = cpufreq_cpu_get(cpu);
-	if (policy && policy->cpu == cpu)
+
+	if (!policy)
+		return;
+
+	if (!cpufreq_frequency_get_table(cpu))
+		goto put_ref;
+
+	if (policy->cpu == cpu)
 		sysfs_remove_group(&policy->kobj, &stats_attr_group);
-	if (policy)
-		cpufreq_cpu_put(policy);
+
+put_ref:
+	cpufreq_cpu_put(policy);
 }
 
 static int cpufreq_stats_create_table(struct cpufreq_policy *policy,
@@ -344,10 +346,6 @@ static int __cpuinit cpufreq_stat_cpu_callback(struct notifier_block *nfb,
 	unsigned int cpu = (unsigned long)hcpu;
 
 	switch (action) {
-	case CPU_ONLINE:
-	case CPU_ONLINE_FROZEN:
-		cpufreq_update_policy(cpu);
-		break;
 	case CPU_DOWN_PREPARE:
 	case CPU_DOWN_PREPARE_FROZEN:
 		cpufreq_stats_free_sysfs(cpu);
@@ -389,18 +387,19 @@ static int __init cpufreq_stats_init(void)
 	if (ret)
 		return ret;
 
+	register_hotcpu_notifier(&cpufreq_stat_cpu_notifier);
+
 	ret = cpufreq_register_notifier(&notifier_trans_block,
 				CPUFREQ_TRANSITION_NOTIFIER);
 	if (ret) {
 		cpufreq_unregister_notifier(&notifier_policy_block,
 				CPUFREQ_POLICY_NOTIFIER);
+		unregister_hotcpu_notifier(&cpufreq_stat_cpu_notifier);
+		for_each_online_cpu(cpu)
+			cpufreq_stats_free_table(cpu);
 		return ret;
 	}
 
-	register_hotcpu_notifier(&cpufreq_stat_cpu_notifier);
-	for_each_online_cpu(cpu) {
-		cpufreq_update_policy(cpu);
-	}
 	return 0;
 }
 static void __exit cpufreq_stats_exit(void)
