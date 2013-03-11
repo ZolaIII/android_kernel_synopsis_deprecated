@@ -18,7 +18,7 @@ static struct acpuclk_data *acpuclk_data;
 
 unsigned long acpuclk_get_rate(int cpu)
 {
-	if (!acpuclk_data->get_rate)
+	if (!acpuclk_data || !acpuclk_data->get_rate)
 		return 0;
 
 	return acpuclk_data->get_rate(cpu);
@@ -26,7 +26,7 @@ unsigned long acpuclk_get_rate(int cpu)
 
 int acpuclk_set_rate(int cpu, unsigned long rate, enum setrate_reason reason)
 {
-	if (!acpuclk_data->set_rate)
+	if (!acpuclk_data || !acpuclk_data->set_rate)
 		return 0;
 
 	return acpuclk_data->set_rate(cpu, rate, reason);
@@ -34,22 +34,34 @@ int acpuclk_set_rate(int cpu, unsigned long rate, enum setrate_reason reason)
 
 uint32_t acpuclk_get_switch_time(void)
 {
+	if (!acpuclk_data || !acpuclk_data->switch_time_us)
+		return 0;
+
 	return acpuclk_data->switch_time_us;
 }
 
 unsigned long acpuclk_power_collapse(void)
 {
 	unsigned long rate = acpuclk_get_rate(smp_processor_id());
+
 	acpuclk_set_rate(smp_processor_id(), acpuclk_data->power_collapse_khz,
 			 SETRATE_PC);
+
+	if (!rate)
+		return 0;
+
 	return rate;
 }
 
 unsigned long acpuclk_wait_for_irq(void)
 {
 	unsigned long rate = acpuclk_get_rate(smp_processor_id());
+
 	acpuclk_set_rate(smp_processor_id(), acpuclk_data->wait_for_irq_khz,
 			 SETRATE_SWFI);
+	if (!rate)
+		return 0;
+
 	return rate;
 }
 
