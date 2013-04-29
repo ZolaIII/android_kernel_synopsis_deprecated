@@ -21,7 +21,6 @@
 #include <linux/slab.h>
 #include <linux/dma-mapping.h>
 
-#include <asm/dma.h>
 #include <sound/core.h>
 #include <sound/soc.h>
 #include <sound/soc-dapm.h>
@@ -29,6 +28,8 @@
 #include <sound/initval.h>
 #include <sound/control.h>
 #include <sound/timer.h>
+
+#include <asm/dma.h>
 
 #include "msm-pcm-q6.h"
 #include "msm-pcm-routing.h"

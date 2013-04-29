@@ -16,19 +16,21 @@
 #include <linux/debugfs.h>
 #include <linux/delay.h>
 #include <linux/uaccess.h>
-
 #include <linux/irq.h>
 #include <linux/interrupt.h>
 #include <linux/spinlock.h>
 #include <linux/slab.h>
 #include <linux/msm_audio.h>
 #include <linux/clk.h>
+
 #include <sound/core.h>
 #include <sound/pcm.h>
 #include <sound/soc.h>
+#include <sound/dai.h>
+
 #include <mach/msm_iomap-8x60.h>
 #include <mach/audio_dma_msm8k.h>
-#include <sound/dai.h>
+
 #include "lpass-pcm.h"
 
 struct dai_baseinfo {

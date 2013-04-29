@@ -24,19 +24,22 @@
 #include <linux/time.h>
 #include <linux/wait.h>
 #include <linux/platform_device.h>
+#include <linux/slab.h>
+#include <linux/dma-mapping.h>
+
 #include <sound/core.h>
 #include <sound/soc.h>
 #include <sound/soc-dapm.h>
 #include <sound/pcm.h>
 #include <sound/initval.h>
 #include <sound/control.h>
-#include <asm/dma.h>
-#include <linux/dma-mapping.h>
 
-#include <linux/slab.h>
-#include "msm7kv2-pcm.h"
+#include <asm/dma.h>
+
 #include <mach/qdsp5v2/audio_dev_ctl.h>
 #include <mach/debug_mm.h>
+
+#include "msm7kv2-pcm.h"
 
 #define HOSTPCM_STREAM_ID 5
 

@@ -18,7 +18,7 @@
 #include <linux/uaccess.h>
 #include <linux/interrupt.h>
 #include <linux/workqueue.h>
-#include <linux/android_pmem.h>
+
 #include <linux/vmalloc.h>
 #include <linux/pm_runtime.h>
 #include <linux/genlock.h>
@@ -1475,11 +1475,10 @@ static int kgsl_get_phys_file(int fd, unsigned long *start, unsigned long *len,
 	dev_t rdev;
 	struct fb_info *info;
 
+	*start = 0;
+	*vstart = 0;
+	*len = 0;
 	*filep = NULL;
-#ifdef CONFIG_ANDROID_PMEM
-	if (!get_pmem_file(fd, start, vstart, len, filep))
-		return 0;
-#endif
 
 	fbfile = fget(fd);
 	if (fbfile == NULL) {
@@ -1518,50 +1517,48 @@ static int kgsl_setup_phys_file(struct kgsl_mem_entry *entry,
 	if (ret)
 		return ret;
 
-	if (phys == 0) {
-		ret = -EINVAL;
+	ret = -ERANGE;
+
+	if (phys == 0)
+		goto err;
+
+	/* Make sure the length of the region, the offset and the desired
+	 * size are all page aligned or bail
+	 */
+	if ((len & ~PAGE_MASK) ||
+		(offset & ~PAGE_MASK) ||
+		(size & ~PAGE_MASK)) {
+		KGSL_CORE_ERR("length offset or size is not page aligned\n");
 		goto err;
 	}
 
-	if (offset >= len) {
-		ret = -EINVAL;
+	/* The size or offset can never be greater than the PMEM length */
+	if (offset >= len || size > len)
 		goto err;
-	}
 
+	/* If size is 0, then adjust it to default to the size of the region
+	 * minus the offset.  If size isn't zero, then make sure that it will
+	 * fit inside of the region.
+	 */
 	if (size == 0)
-		size = len;
+		size = len - offset;
 
-	/* Adjust the size of the region to account for the offset */
-	size += offset & ~PAGE_MASK;
-
-	size = ALIGN(size, PAGE_SIZE);
-
-	if (_check_region(offset & PAGE_MASK, size, len)) {
-		KGSL_CORE_ERR("Offset (%ld) + size (%d) is larger"
-			      "than pmem region length %ld\n",
-			      offset & PAGE_MASK, size, len);
-		ret = -EINVAL;
+	else if (_check_region(offset, size, len))
 		goto err;
-
-	}
 
 	entry->priv_data = filep;
 
 	entry->memdesc.pagetable = pagetable;
 	entry->memdesc.size = size;
-	entry->memdesc.physaddr = phys + (offset & PAGE_MASK);
-	entry->memdesc.hostptr = (void *) (virt + (offset & PAGE_MASK));
+	entry->memdesc.physaddr = phys + offset;
+	entry->memdesc.hostptr = (void *) (virt + offset);
 
-	ret = memdesc_sg_phys(&entry->memdesc,
-		phys + (offset & PAGE_MASK), size);
+	ret = memdesc_sg_phys(&entry->memdesc, phys + offset, size);
 	if (ret)
 		goto err;
 
 	return 0;
 err:
-#ifdef CONFIG_ANDROID_PMEM
-	put_pmem_file(filep);
-#endif
 	return ret;
 }
 

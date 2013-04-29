@@ -20,6 +20,7 @@
 #include <linux/platform_device.h>
 #include <linux/slab.h>
 #include <linux/dma-mapping.h>
+#include <linux/memory_alloc.h>
 
 #include <sound/core.h>
 #include <sound/soc.h>
@@ -28,8 +29,9 @@
 #include <sound/initval.h>
 #include <sound/control.h>
 #include <sound/q6adm.h>
+
 #include <asm/dma.h>
-#include <linux/memory_alloc.h>
+
 #include "msm-pcm-afe.h"
 #include "msm-pcm-q6.h"
 

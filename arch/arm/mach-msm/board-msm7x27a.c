@@ -38,7 +38,6 @@
 #include <linux/i2c.h>
 #include <linux/i2c/sx150x.h>
 #include <linux/gpio.h>
-#include <linux/android_pmem.h>
 #include <linux/bootmem.h>
 #include <linux/mfd/marimba.h>
 #include <mach/vreg.h>
@@ -48,7 +47,6 @@
 #include <mach/msm_battery.h>
 #include <linux/smsc911x.h>
 #include <linux/atmel_maxtouch.h>
-/* update Qcomm original  base line , delete 1 line for fmem disable and avoid deadlock*/
 #include <linux/msm_adc.h>
 #include <linux/ion.h>
 #include "devices.h"
@@ -82,8 +80,8 @@ static ssize_t  buf_vkey_size=0;
 #include <asm-arm/huawei/usb_switch_huawei.h>
 #endif
 
-#define PMEM_KERNEL_EBI1_SIZE	0x3A000
-#define MSM_PMEM_AUDIO_SIZE	0x1F4000
+#define RESERVE_KERNEL_EBI1_SIZE	0x3A000
+#define MSM_RESERVE_AUDIO_SIZE		0x1F4000
 
 #if defined(CONFIG_GPIO_SX150X)
 enum {
@@ -254,35 +252,11 @@ static struct msm_i2c_platform_data msm_gsbi1_qup_i2c_pdata = {
 };
 
 #ifdef CONFIG_ARCH_MSM7X27A
-#define MSM_PMEM_MDP_SIZE       0x2300000
-#define MSM7x25A_MSM_PMEM_MDP_SIZE       0x1500000
-
-#define MSM_PMEM_ADSP_SIZE      0x1200000
-#define MSM_PMEM_ADSP_BIG_SIZE      0x1E00000
-#define MSM7x25A_MSM_PMEM_ADSP_SIZE      0xB91000
-#define CAMERA_ZSL_SIZE		(SZ_1M * 60)
-
-#define MSM_3M_PMEM_ADSP_SIZE	(0x1048000)
-/*   enlarge the pmem space for HDR on 8950s
- */
-static unsigned int get_pmem_adsp_size(void)
-{
-	if( machine_is_msm8x25_C8950D()
-	|| machine_is_msm8x25_U8950D()
-	/*delete some line; to reduce pmem for releasing memory*/
-	||machine_is_msm8x25_U8950()){
-			return CAMERA_ZSL_SIZE;		
-		}
-	else if (machine_is_msm7x27a_H867G()
-           || machine_is_msm7x27a_H868C()
-	   || machine_is_msm8x25_Y301_A1() )
-	{
-		return  MSM_3M_PMEM_ADSP_SIZE;
-	}	
-	else
-		return MSM_PMEM_ADSP_SIZE;
-
-}
+#define MSM_RESERVE_MDP_SIZE		0x1C00000
+#define MSM7x25A_MSM_RESERVE_MDP_SIZE   0x1500000
+#define MSM_RESERVE_ADSP_SIZE		0x1200000
+#define MSM7x25A_MSM_RESERVE_ADSP_SIZE	0xB91000
+#define CAMERA_ZSL_SIZE			(SZ_1M * 60)
 #endif
 
 #ifdef CONFIG_ION_MSM
@@ -448,13 +422,12 @@ static struct platform_device smc91x_device = {
 	.resource       = smc91x_resources,
 };
 
-/* back to qcomm orignal 1025 baseline */
+#ifdef CONFIG_SERIAL_MSM_HS
 static struct msm_serial_hs_platform_data msm_uart_dm1_pdata = {
 	.inject_rx_on_wakeup	= 1,
 	.rx_to_inject		= 0xFD,
 };
-
-
+#endif
 static struct msm_pm_platform_data msm7x27a_pm_data[MSM_PM_SLEEP_MODE_NR] = {
 	[MSM_PM_MODE(0, MSM_PM_SLEEP_MODE_POWER_COLLAPSE)] = {
 					.idle_supported = 1,
@@ -523,7 +496,7 @@ static struct msm_pm_platform_data msm8625_pm_data[MSM_PM_SLEEP_MODE_NR * 2] = {
 					.idle_enabled = 0,
 					.suspend_enabled = 0,
 					.latency = 500,
-					.residency = 6000,
+					.residency = 2000,
 	},
 
 	[MSM_PM_MODE(0, MSM_PM_SLEEP_MODE_WAIT_FOR_INTERRUPT)] = {
@@ -542,7 +515,7 @@ static struct msm_pm_platform_data msm8625_pm_data[MSM_PM_SLEEP_MODE_NR * 2] = {
 					.idle_enabled = 0,
 					.suspend_enabled = 0,
 					.latency = 500,
-					.residency = 6000,
+					.residency = 2000,
 	},
 
 	[MSM_PM_MODE(1, MSM_PM_SLEEP_MODE_WAIT_FOR_INTERRUPT)] = {
@@ -561,62 +534,23 @@ static struct msm_pm_boot_platform_data msm_pm_8625_boot_pdata __initdata = {
 	.v_addr = MSM_CFG_CTL_BASE,
 };
 
-static struct android_pmem_platform_data android_pmem_adsp_pdata = {
-	.name = "pmem_adsp",
-	.allocator_type = PMEM_ALLOCATORTYPE_BITMAP,
-	.cached = 1,
-	.memory_type = MEMTYPE_EBI1,
-	/*  update Qcomm original  base line , delete 3 lines for fmem disable and avoid deadlock*/
-};
-
-static struct platform_device android_pmem_adsp_device = {
-	.name = "android_pmem",
-	.id = 1,
-	.dev = { .platform_data = &android_pmem_adsp_pdata },
-};
-
-static unsigned pmem_mdp_size = MSM_PMEM_MDP_SIZE;
-static int __init pmem_mdp_size_setup(char *p)
+static unsigned reserve_mdp_size = MSM_RESERVE_MDP_SIZE;
+static int __init reserve_mdp_size_setup(char *p)
 {
-	pmem_mdp_size = memparse(p, NULL);
+	reserve_mdp_size = memparse(p, NULL);
 	return 0;
 }
 
-early_param("pmem_mdp_size", pmem_mdp_size_setup);
+early_param("reserve_mdp_size", reserve_mdp_size_setup);
 
-static unsigned pmem_adsp_size = MSM_PMEM_ADSP_SIZE;
-static int __init pmem_adsp_size_setup(char *p)
+static unsigned reserve_adsp_size = MSM_RESERVE_ADSP_SIZE;
+static int __init reserve_adsp_size_setup(char *p)
 {
-	pmem_adsp_size = memparse(p, NULL);
+	reserve_adsp_size = memparse(p, NULL);
 	return 0;
 }
 
-early_param("pmem_adsp_size", pmem_adsp_size_setup);
-
-static struct android_pmem_platform_data android_pmem_audio_pdata = {
-	.name = "pmem_audio",
-	.allocator_type = PMEM_ALLOCATORTYPE_BITMAP,
-	.cached = 0,
-	.memory_type = MEMTYPE_EBI1,
-};
-
-static struct platform_device android_pmem_audio_device = {
-	.name = "android_pmem",
-	.id = 2,
-	.dev = { .platform_data = &android_pmem_audio_pdata },
-};
-
-static struct android_pmem_platform_data android_pmem_pdata = {
-	.name = "pmem",
-	.allocator_type = PMEM_ALLOCATORTYPE_BITMAP,
-	.cached = 1,
-	.memory_type = MEMTYPE_EBI1,
-};
-static struct platform_device android_pmem_device = {
-	.name = "android_pmem",
-	.id = 0,
-	.dev = { .platform_data = &android_pmem_pdata },
-};
+early_param("reserve_adsp_size", reserve_adsp_size_setup);
 
 static u32 msm_calculate_batt_capacity(u32 current_voltage);
 
@@ -648,9 +582,8 @@ static struct platform_device msm_batt_device = {
 	.id                 = -1,
 	.dev.platform_data  = &msm_psy_batt_data,
 };
-/* lishubin update to 1215 added ifndef CONFIG_HUAWEI_CAMERA & endif*/
+
 #ifndef CONFIG_HUAWEI_CAMERA
-/* lishubin update to 1215 added ifndef CONFIG_HUAWEI_CAMERA & endif*/
 static struct smsc911x_platform_config smsc911x_config = {
 	.irq_polarity	= SMSC911X_IRQ_POLARITY_ACTIVE_HIGH,
 	.irq_type	= SMSC911X_IRQ_TYPE_PUSH_PULL,
@@ -686,9 +619,8 @@ static struct msm_gpio smsc911x_gpios[] = {
 	{ GPIO_CFG(49, 0, GPIO_CFG_OUTPUT, GPIO_CFG_NO_PULL, GPIO_CFG_6MA),
 							 "eth_fifo_sel" },
 };
-/* lishubin update to 1215 added ifndef CONFIG_HUAWEI_CAMERA & endif*/
 #endif
-/* lishubin update to 1215 added ifndef CONFIG_HUAWEI_CAMERA & endif*/
+
 static char *msm_adc_surf_device_names[] = {
 	"XO_ADC",
 };
@@ -707,10 +639,33 @@ static struct platform_device msm_adc_device = {
 	},
 };
 
+#ifdef CONFIG_MSM_RTB
+static struct msm_rtb_platform_data msm7x27a_rtb_pdata = {
+	.size = SZ_1M,
+};
+
+static int __init msm_rtb_set_buffer_size(char *p)
+{
+	int s;
+
+	s = memparse(p, NULL);
+	msm7x27a_rtb_pdata.size = ALIGN(s, SZ_4K);
+	return 0;
+}
+early_param("msm_rtb_size", msm_rtb_set_buffer_size);
+
+struct platform_device msm7x27a_rtb_device = {
+	.name = "msm_rtb",
+	.id   = -1,
+	.dev  = {
+		.platform_data = &msm7x27a_rtb_pdata,
+	},
+};
+#endif
+
 #define ETH_FIFO_SEL_GPIO	49
-/* lishubin update to 1215 added ifndef CONFIG_HUAWEI_CAMERA & endif*/
+
 #ifndef CONFIG_HUAWEI_CAMERA
-/* lishubin update to 1215 added ifndef CONFIG_HUAWEI_CAMERA & endif*/
 static void msm7x27a_cfg_smsc911x(void)
 {
 	int res;
@@ -733,9 +688,7 @@ static void msm7x27a_cfg_smsc911x(void)
 	}
 	gpio_set_value(ETH_FIFO_SEL_GPIO, 0);
 }
-/* lishubin update to 1215 added ifndef CONFIG_HUAWEI_CAMERA & endif*/
 #endif 
-/* lishubin update to 1215 added ifndef CONFIG_HUAWEI_CAMERA & endif*/
 
 #if defined(CONFIG_SERIAL_MSM_HSL_CONSOLE) \
 		&& defined(CONFIG_MSM_SHARED_GPIO_FOR_UART2DM)
@@ -762,21 +715,6 @@ static void msm7x27a_cfg_uart2dm_serial(void)
 static void msm7x27a_cfg_uart2dm_serial(void) { }
 #endif
 
-/*  update Qcomm original  base line , delete 6 lines for fmem disable and avoid deadlock*/
-
-
-/* delete uart1 serial port */
-#ifdef CONFIG_HUAWEI_KERNEL
-static struct platform_device *rumi_sim_devices[] __initdata = {
-	&msm_device_dmov,
-	&msm_device_smd,
-	&smc91x_device,
-	&msm_device_nand,
-	&msm_device_uart_dm1,
-	&msm_gsbi0_qup_i2c_device,
-	&msm_gsbi1_qup_i2c_device,
-};
-#else
 static struct platform_device *rumi_sim_devices[] __initdata = {
 	&msm_device_dmov,
 	&msm_device_smd,
@@ -787,7 +725,6 @@ static struct platform_device *rumi_sim_devices[] __initdata = {
 	&msm_gsbi0_qup_i2c_device,
 	&msm_gsbi1_qup_i2c_device,
 };
-#endif
 
 static struct platform_device *msm8625_rumi3_devices[] __initdata = {
 	&msm8625_device_dmov,
@@ -806,20 +743,14 @@ static struct platform_device *msm7627a_surf_ffa_devices[] __initdata = {
 	&msm_gsbi1_qup_i2c_device,
 	&msm_device_otg,
 	&msm_device_gadget_peripheral,
-/* lishubin update to 1215 added ifndef CONFIG_HUAWEI_CAMERA & endif*/
 #ifndef CONFIG_HUAWEI_CAMERA
 	&smsc911x_device,
 #endif
-/* lishubin update to 1215 added ifndef CONFIG_HUAWEI_CAMERA & endif*/
 	&msm_kgsl_3d0,
 };
 
 static struct platform_device *common_devices[] __initdata = {
 	&android_usb_device,
-	&android_pmem_device,
-	&android_pmem_adsp_device,
-	&android_pmem_audio_device,
-    /*  update Qcomm original  base line , delete 1 line for fmem disable and avoid deadlock*/
 	&msm_device_nand,
 	&msm_device_snd,
 	&msm_device_cad,
@@ -828,8 +759,13 @@ static struct platform_device *common_devices[] __initdata = {
 	&asoc_msm_dai0,
 	&asoc_msm_dai1,
 	&msm_batt_device,
-	
-/* delete all bt devices */
+	&msm_adc_device,
+#ifdef CONFIG_MSM_RTB
+	&msm7x27a_rtb_device,
+#endif
+#ifdef CONFIG_ION_MSM
+	&ion_dev,
+#endif
 #ifdef CONFIG_HUAWEI_KERNEL
 	
 	/* Registration device */
@@ -840,10 +776,6 @@ static struct platform_device *common_devices[] __initdata = {
 #ifdef CONFIG_HUAWEI_HW_DEV_DCT
 	&huawei_device_detect,
 #endif
-#endif
-	&msm_adc_device,
-#ifdef CONFIG_ION_MSM
-	&ion_dev,
 #endif
 };
 
@@ -860,42 +792,46 @@ static struct platform_device *msm8625_surf_devices[] __initdata = {
 	&msm8625_kgsl_3d0,
 };
 
-static unsigned pmem_kernel_ebi1_size = PMEM_KERNEL_EBI1_SIZE;
-static int __init pmem_kernel_ebi1_size_setup(char *p)
+static unsigned reserve_kernel_ebi1_size = RESERVE_KERNEL_EBI1_SIZE;
+static int __init reserve_kernel_ebi1_size_setup(char *p)
 {
-	pmem_kernel_ebi1_size = memparse(p, NULL);
+	reserve_kernel_ebi1_size = memparse(p, NULL);
 	return 0;
 }
-early_param("pmem_kernel_ebi1_size", pmem_kernel_ebi1_size_setup);
+early_param("reserve_kernel_ebi1_size", reserve_kernel_ebi1_size_setup);
 
-static unsigned pmem_audio_size = MSM_PMEM_AUDIO_SIZE;
-static int __init pmem_audio_size_setup(char *p)
+static unsigned reserve_audio_size = MSM_RESERVE_AUDIO_SIZE;
+static int __init reserve_audio_size_setup(char *p)
 {
-	pmem_audio_size = memparse(p, NULL);
+	reserve_audio_size = memparse(p, NULL);
 	return 0;
 }
-early_param("pmem_audio_size", pmem_audio_size_setup);
+early_param("reserve_audio_size", reserve_audio_size_setup);
 
 static void fix_sizes(void)
 {
 	if (machine_is_msm7625a_surf() || machine_is_msm7625a_ffa()) {
-		pmem_mdp_size = MSM7x25A_MSM_PMEM_MDP_SIZE;
-		pmem_adsp_size = MSM7x25A_MSM_PMEM_ADSP_SIZE;
+		reserve_mdp_size = MSM7x25A_MSM_RESERVE_MDP_SIZE;
+		reserve_adsp_size = MSM7x25A_MSM_RESERVE_ADSP_SIZE;
 	} else {
-		pmem_mdp_size = get_mdp_pmem_size();
-		printk("pmem_mdp_size=%08x\n",pmem_mdp_size);
-		pmem_adsp_size = get_pmem_adsp_size();
-		printk("pmem_adsp_size=%08x\n",pmem_adsp_size);
+		reserve_mdp_size = MSM_RESERVE_MDP_SIZE;
+		reserve_adsp_size = MSM_RESERVE_ADSP_SIZE;
 	}
-/*delete qcom code */
-/*
+
 	if (get_ddr_size() > SZ_512M)
-		pmem_adsp_size = CAMERA_ZSL_SIZE;*/
+		reserve_adsp_size = CAMERA_ZSL_SIZE;
 #ifdef CONFIG_ION_MSM
-	msm_ion_camera_size = pmem_adsp_size;
-	msm_ion_audio_size = (MSM_PMEM_AUDIO_SIZE + PMEM_KERNEL_EBI1_SIZE);
-	msm_ion_sf_size = pmem_mdp_size;
+	msm_ion_camera_size = reserve_adsp_size;
+	msm_ion_audio_size = (MSM_RESERVE_AUDIO_SIZE +
+					RESERVE_KERNEL_EBI1_SIZE);
+	msm_ion_sf_size = reserve_mdp_size;
 #endif
+	printk("---\n");
+	printk("Reserving static memory for multimedia...\n");
+	printk("MDP size: %08x\n",reserve_mdp_size);
+	printk("ADSP size: %08x\n",reserve_adsp_size);
+	printk("Audio size: %08x\n",msm_ion_audio_size);
+	printk("---\n");
 }
 
 #ifdef CONFIG_ION_MSM
@@ -920,7 +856,7 @@ static struct ion_platform_data ion_pdata = {
 			.name	= ION_VMALLOC_HEAP_NAME,
 		},
 #ifdef CONFIG_MSM_MULTIMEDIA_USE_ION
-		/* PMEM_ADSP = CAMERA */
+		/* ION_ADSP = CAMERA */
 		{
 			.id	= ION_CAMERA_HEAP_ID,
 			.type	= ION_HEAP_TYPE_CARVEOUT,
@@ -928,7 +864,7 @@ static struct ion_platform_data ion_pdata = {
 			.memory_type = ION_EBI_TYPE,
 			.extra_data = (void *)&co_ion_pdata,
 		},
-		/* PMEM_AUDIO */
+		/* ION_AUDIO */
 		{
 			.id	= ION_AUDIO_HEAP_ID,
 			.type	= ION_HEAP_TYPE_CARVEOUT,
@@ -936,7 +872,7 @@ static struct ion_platform_data ion_pdata = {
 			.memory_type = ION_EBI_TYPE,
 			.extra_data = (void *)&co_ion_pdata,
 		},
-		/* PMEM_MDP = SF */
+		/* ION_MDP = SF */
 		{
 			.id	= ION_SF_HEAP_ID,
 			.type	= ION_HEAP_TYPE_CARVEOUT,
@@ -966,46 +902,16 @@ static struct memtype_reserve msm7x27a_reserve_table[] __initdata = {
 	},
 };
 
-/*  update Qcomm original  base line , delete 7 lines for fmem disable and avoid deadlock*/
-
-static void __init size_pmem_devices(void)
+#ifdef CONFIG_MSM_RTB
+static void __init reserve_rtb_memory(void)
 {
-#ifdef CONFIG_ANDROID_PMEM
-#ifndef CONFIG_MSM_MULTIMEDIA_USE_ION
-
-    /*  update Qcomm original  base line , delete 2 lines for fmem disable and avoid deadlock*/
-	android_pmem_adsp_pdata.size = pmem_adsp_size;
-	android_pmem_pdata.size = pmem_mdp_size;
-	android_pmem_audio_pdata.size = pmem_audio_size;
-
-    /*  update Qcomm original  base line , delete 19 lines for fmem disable and avoid deadlock*/
-
-#endif
-#endif
+	msm7x27a_reserve_table[MEMTYPE_EBI1].size += msm7x27a_rtb_pdata.size;
 }
-
-#ifdef CONFIG_ANDROID_PMEM
-#ifndef CONFIG_MSM_MULTIMEDIA_USE_ION
-static void __init reserve_memory_for(struct android_pmem_platform_data *p)
+#else
+static void __init reserve_rtb_memory(void)
 {
-	msm7x27a_reserve_table[p->memory_type].size += p->size;
 }
 #endif
-#endif
-
-static void __init reserve_pmem_memory(void)
-{
-#ifdef CONFIG_ANDROID_PMEM
-#ifndef CONFIG_MSM_MULTIMEDIA_USE_ION
-    /*  update Qcomm original  base line , delete 3 lines and add 3 lines for fmem disable and avoid deadlock*/	
-	reserve_memory_for(&android_pmem_adsp_pdata);
-	reserve_memory_for(&android_pmem_pdata);
-	reserve_memory_for(&android_pmem_audio_pdata);
-
-	msm7x27a_reserve_table[MEMTYPE_EBI1].size += pmem_kernel_ebi1_size;
-#endif
-#endif
-}
 
 static void __init size_ion_devices(void)
 {
@@ -1028,10 +934,9 @@ static void __init reserve_ion_memory(void)
 static void __init msm7x27a_calculate_reserve_sizes(void)
 {
 	fix_sizes();
-	size_pmem_devices();
-	reserve_pmem_memory();
 	size_ion_devices();
 	reserve_ion_memory();
+	reserve_rtb_memory();
 }
 
 static int msm7x27a_paddr_to_memtype(unsigned int paddr)
@@ -1105,18 +1010,12 @@ static void __init msm7x27a_reserve(void)
 #endif /* CONFIG_SRECORDER_MSM */
 }
 
-
-/* 此段代码被全部移到static void __init msm7x27a_reserve(void)函数前面 */
-
 static void __init msm8625_reserve(void)
 {
 	msm7x27a_reserve();
-
-/* 此段代码被全部移到的实现被移到static void __init msm7x27a_reserve(void)函数里面实现 */
-
 	memblock_remove(MSM8625_SECONDARY_PHYS, SZ_8);
 	memblock_remove(MSM8625_WARM_BOOT_PHYS, SZ_32);
-	memblock_remove(MSM8625_NON_CACHE_MEM, SZ_2K);
+//	memblock_remove(MSM8625_NON_CACHE_MEM, SZ_2K);
 }
 
 static void __init msm7x27a_device_i2c_init(void)
@@ -1508,32 +1407,18 @@ static void __init msm7x2x_init(void)
 	msm7627a_add_io_devices();
 	/*7x25a kgsl initializations*/
 	msm7x25a_kgsl_3d0_init();
-	
-#ifdef CONFIG_HUAWEI_FEATURE_OEMINFO
-    rmt_oeminfo_add_device();
-#endif
-
-#ifdef CONFIG_HUAWEI_KERNEL
-	virtualkeys_init();
-#endif
-
-#ifdef CONFIG_HUAWEI_KERNEL
-    hw_extern_sdcard_add_device();
-#endif
-    
 	/*8x25 kgsl initializations*/
 	msm8x25_kgsl_3d0_init();
-
-	
-#ifdef CONFIG_HUAWEI_MTK6252_MODEM
-	{
-		unsigned smem_size;
-		boot_reason = *(unsigned int *)
-			(smem_get_entry(SMEM_POWER_ON_STATUS_INFO, &smem_size));
-		printk(KERN_NOTICE "Boot Reason = 0x%02x\n", boot_reason);
-		mtk6252_dev_init();
-	}
-#endif
+#ifdef CONFIG_HUAWEI_KERNEL
+	virtualkeys_init();
+	hw_extern_sdcard_add_device();
+# ifdef CONFIG_HUAWEI_FEATURE_OEMINFO
+	rmt_oeminfo_add_device();
+# endif
+# ifdef CONFIG_HUAWEI_MTK6252_MODEM
+	mtk6252_dev_init();
+# endif
+#endif /* CONFIG_HUAWEI_KERNEL */
 }
 
 static void __init msm7x2x_init_early(void)

@@ -19,6 +19,9 @@
 #include <linux/wait.h>
 #include <linux/platform_device.h>
 #include <linux/slab.h>
+#include <linux/dma-mapping.h>
+#include <linux/msm_audio_ion.h>
+
 #include <sound/core.h>
 #include <sound/soc.h>
 #include <sound/soc-dapm.h>
@@ -27,16 +30,14 @@
 #include <sound/control.h>
 #include <sound/q6asm-v2.h>
 #include <sound/pcm_params.h>
-#include <asm/dma.h>
-#include <linux/dma-mapping.h>
-#include <linux/msm_audio_ion.h>
-
 #include <sound/timer.h>
+#include <sound/tlv.h>
+
+#include <asm/dma.h>
 
 #include "msm-compr-q6-v2.h"
 #include "msm-pcm-routing-v2.h"
 #include "audio_ocmem.h"
-#include <sound/tlv.h>
 
 #define COMPRE_CAPTURE_NUM_PERIODS	16
 /* Allocate the worst case frame size for compressed audio */

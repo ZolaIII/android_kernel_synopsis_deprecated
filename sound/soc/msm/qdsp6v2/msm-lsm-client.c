@@ -19,6 +19,7 @@
 #include <linux/slab.h>
 #include <linux/dma-mapping.h>
 #include <linux/of.h>
+
 #include <sound/core.h>
 #include <sound/soc.h>
 #include <sound/soc-dapm.h>
@@ -28,6 +29,7 @@
 #include <sound/control.h>
 #include <sound/q6lsm.h>
 #include <sound/lsm_params.h>
+
 #include "msm-pcm-routing-v2.h"
 
 struct lsm_priv {

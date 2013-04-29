@@ -391,3 +391,5 @@ obj-$(CONFIG_DEBUG_FS) += msm_cpr-debug.o
 endif
 obj-$(CONFIG_MSM_FIQ) += msm7k_fiq.o
 obj-$(CONFIG_MSM_FIQ) += msm7k_fiq_handler.o
+
+CFLAGS_board-msm7x27a.o += -Wno-missing-braces

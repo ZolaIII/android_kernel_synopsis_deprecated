@@ -18,6 +18,8 @@
 #include <linux/wait.h>
 #include <linux/platform_device.h>
 #include <linux/slab.h>
+#include <linux/dma-mapping.h>
+
 #include <sound/core.h>
 #include <sound/soc.h>
 #include <sound/soc-dapm.h>
@@ -25,13 +27,12 @@
 #include <sound/initval.h>
 #include <sound/control.h>
 #include <sound/pcm_params.h>
-#include <asm/dma.h>
-#include <linux/dma-mapping.h>
-
 #include <sound/compress_params.h>
 #include <sound/compress_offload.h>
 #include <sound/compress_driver.h>
 #include <sound/timer.h>
+
+#include <asm/dma.h>
 
 #include "msm-pcm-q6.h"
 #include "msm-pcm-routing.h"

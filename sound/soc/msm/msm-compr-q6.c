@@ -19,6 +19,8 @@
 #include <linux/wait.h>
 #include <linux/platform_device.h>
 #include <linux/slab.h>
+#include <linux/dma-mapping.h>
+
 #include <sound/core.h>
 #include <sound/soc.h>
 #include <sound/soc-dapm.h>
@@ -27,12 +29,11 @@
 #include <sound/control.h>
 #include <sound/q6asm.h>
 #include <sound/pcm_params.h>
-#include <asm/dma.h>
-#include <linux/dma-mapping.h>
-
 #include <sound/timer.h>
+
+#include <asm/dma.h>
+
 #include <mach/qdsp6v2/q6core.h>
-#include <sound/pcm.h>
 
 #include "msm-compr-q6.h"
 #include "msm-pcm-routing.h"

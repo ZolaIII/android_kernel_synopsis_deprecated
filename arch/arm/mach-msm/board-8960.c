@@ -27,9 +27,6 @@
 #include <linux/slimbus/slimbus.h>
 #include <linux/bootmem.h>
 #include <linux/msm_kgsl.h>
-#ifdef CONFIG_ANDROID_PMEM
-#include <linux/android_pmem.h>
-#endif
 #include <linux/cyttsp-qc.h>
 #include <linux/dma-mapping.h>
 #include <linux/platform_data/qcom_crypto_device.h>
@@ -144,7 +141,7 @@ struct sx150x_platform_data msm8960_sx150x_data[] = {
 
 #ifdef CONFIG_MSM_MULTIMEDIA_USE_ION
 #define HOLE_SIZE	0x20000
-#define MSM_PMEM_KERNEL_EBI1_SIZE  0x65000
+#define MSM_CONTIG_MEM_SIZE  0x65000
 #ifdef CONFIG_MSM_IOMMU
 #define MSM_ION_MM_SIZE            0x3800000 /* Need to be multiple of 64K */
 #define MSM_ION_SF_SIZE            0x0
@@ -172,18 +169,18 @@ struct sx150x_platform_data msm8960_sx150x_data[] = {
 
 static unsigned msm_ion_sf_size = MSM_ION_SF_SIZE;
 #else
-#define MSM_PMEM_KERNEL_EBI1_SIZE  0x110C000
+#define MSM_CONTIG_MEM_SIZE  0x110C000
 #define MSM_ION_HEAP_NUM	1
 #endif
 
-#ifdef CONFIG_KERNEL_PMEM_EBI_REGION
-static unsigned pmem_kernel_ebi1_size = MSM_PMEM_KERNEL_EBI1_SIZE;
-static int __init pmem_kernel_ebi1_size_setup(char *p)
+#ifdef CONFIG_KERNEL_MSM_CONTIG_MEM_REGION
+static unsigned msm_contig_mem_size = MSM_CONTIG_MEM_SIZE;
+static int __init msm_contig_mem_size_setup(char *p)
 {
-	pmem_kernel_ebi1_size = memparse(p, NULL);
+	msm_contig_mem_size = memparse(p, NULL);
 	return 0;
 }
-early_param("pmem_kernel_ebi1_size", pmem_kernel_ebi1_size_setup);
+early_param("msm_contig_mem_size", msm_contig_mem_size_setup);
 #endif
 
 #ifdef CONFIG_ANDROID_PMEM
@@ -332,7 +329,7 @@ static void __init reserve_pmem_memory(void)
 	reserve_memory_for(&android_pmem_pdata);
 	reserve_memory_for(&android_pmem_audio_pdata);
 #endif
-	msm8960_reserve_table[MEMTYPE_EBI1].size += pmem_kernel_ebi1_size;
+	msm8960_reserve_table[MEMTYPE_EBI1].size += msm_contig_mem_size;
 #endif
 }
 
@@ -461,24 +458,22 @@ static void __init adjust_mem_for_liquid(void)
 {
 	unsigned int i;
 
-	if (!pmem_param_set) {
-		if (machine_is_msm8960_liquid())
-			msm_ion_sf_size = MSM_LIQUID_ION_SF_SIZE;
+	if (machine_is_msm8960_liquid())
+		msm_ion_sf_size = MSM_LIQUID_ION_SF_SIZE;
 
-		if (msm8960_hdmi_as_primary_selected())
-			msm_ion_sf_size = MSM_HDMI_PRIM_ION_SF_SIZE;
+	if (msm8960_hdmi_as_primary_selected())
+		msm_ion_sf_size = MSM_HDMI_PRIM_ION_SF_SIZE;
 
-		if (machine_is_msm8960_liquid() ||
-			msm8960_hdmi_as_primary_selected()) {
-			for (i = 0; i < msm8960_ion_pdata.nr; i++) {
-				if (msm8960_ion_pdata.heaps[i].id ==
-							ION_SF_HEAP_ID) {
-					msm8960_ion_pdata.heaps[i].size =
-						msm_ion_sf_size;
-					pr_debug("msm_ion_sf_size 0x%x\n",
-						msm_ion_sf_size);
-					break;
-				}
+	if (machine_is_msm8960_liquid() ||
+		msm8960_hdmi_as_primary_selected()) {
+		for (i = 0; i < msm8960_ion_pdata.nr; i++) {
+			if (msm8960_ion_pdata.heaps[i].id ==
+						ION_SF_HEAP_ID) {
+				msm8960_ion_pdata.heaps[i].size =
+					msm_ion_sf_size;
+				pr_debug("msm_ion_sf_size 0x%x\n",
+					msm_ion_sf_size);
+				break;
 			}
 		}
 	}
@@ -697,12 +692,11 @@ static void __init reserve_cache_dump_memory(void)
 
 static void __init msm8960_calculate_reserve_sizes(void)
 {
-	size_pmem_devices();
-	reserve_pmem_memory();
 	reserve_ion_memory();
 	reserve_mdp_memory();
 	reserve_rtb_memory();
 	reserve_cache_dump_memory();
+	msm8960_reserve_table[MEMTYPE_EBI1].size += msm_contig_mem_size;
 }
 
 static struct reserve_info msm8960_reserve_info __initdata = {

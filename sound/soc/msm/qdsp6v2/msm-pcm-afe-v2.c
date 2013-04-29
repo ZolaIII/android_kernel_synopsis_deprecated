@@ -21,6 +21,7 @@
 #include <linux/slab.h>
 #include <linux/dma-mapping.h>
 #include <linux/msm_audio_ion.h>
+#include <linux/memory_alloc.h>
 
 #include <sound/core.h>
 #include <sound/soc.h>
@@ -29,8 +30,9 @@
 #include <sound/initval.h>
 #include <sound/control.h>
 #include <sound/q6adm-v2.h>
+
 #include <asm/dma.h>
-#include <linux/memory_alloc.h>
+
 #include "msm-pcm-afe-v2.h"
 
 #define MIN_PLAYBACK_PERIOD_SIZE (128 * 2)

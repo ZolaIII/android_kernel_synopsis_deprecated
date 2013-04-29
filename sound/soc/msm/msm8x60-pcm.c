@@ -18,15 +18,17 @@
 #include <linux/wait.h>
 #include <linux/platform_device.h>
 #include <linux/slab.h>
+#include <linux/dma-mapping.h>
+#include <linux/delay.h>
+
 #include <sound/core.h>
 #include <sound/soc.h>
 #include <sound/soc-dapm.h>
 #include <sound/pcm.h>
 #include <sound/initval.h>
 #include <sound/control.h>
+
 #include <asm/dma.h>
-#include <linux/dma-mapping.h>
-#include <linux/delay.h>
 
 #include <mach/qdsp6v2/audio_dev_ctl.h>
 

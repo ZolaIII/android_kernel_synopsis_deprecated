@@ -22,6 +22,7 @@
 #include <linux/dma-mapping.h>
 
 #include <asm/dma.h>
+
 #include <sound/core.h>
 #include <sound/soc.h>
 #include <sound/soc-dapm.h>

@@ -19,18 +19,19 @@
 #include <linux/wait.h>
 #include <linux/platform_device.h>
 #include <linux/slab.h>
+#include <linux/dma-mapping.h>
+#include <linux/msm_audio_ion.h>
+#include <linux/of_device.h>
+
 #include <sound/core.h>
 #include <sound/soc.h>
 #include <sound/soc-dapm.h>
 #include <sound/pcm.h>
 #include <sound/initval.h>
 #include <sound/control.h>
-#include <asm/dma.h>
-#include <linux/dma-mapping.h>
-#include <linux/msm_audio_ion.h>
-
-#include <linux/of_device.h>
 #include <sound/pcm_params.h>
+
+#include <asm/dma.h>
 
 #include "msm-pcm-q6-v2.h"
 #include "msm-pcm-routing-v2.h"
