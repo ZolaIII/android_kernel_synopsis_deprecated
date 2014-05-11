@@ -266,4 +266,16 @@ config BT_WILINK
 
 	  Say Y here to compile support for Texas Instrument's WiLink7 driver
 	  into the kernel or say M to compile it as module.
+
+config HUAWEI_BT_BTLA_VER30
+	bool "Broadcom BCM43XX Bluetooth support (BTLA)"
+	default n
+	---help---
+	  Select Y to use Broadcom's BTLA stack. Used by BCM4330 and BCM4329.
+
+config HUAWEI_BT_BLUEZ_VER30
+	bool "Qualcomm WCN2243 Bluetooth support (BLUEZ)"
+	default y if MACH_MSM8X25_U8833
+	---help---
+	  Select Y to use Qualcomm's BlueZ stack. Used by WCN2243 (default on: Y300-100).
 endmenu
