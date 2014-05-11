@@ -30,7 +30,7 @@
  */
 
 #define DEF_FREQUENCY_UP_THRESHOLD		(80)
-#define DEF_FREQUENCY_DOWN_THRESHOLD		(20)
+#define DEF_FREQUENCY_DOWN_THRESHOLD		(40)
 
 /*
  * The polling frequency of this governor depends on the capability of
@@ -43,8 +43,10 @@
  * All times here are in uS.
  */
 #define MIN_SAMPLING_RATE_RATIO			(2)
+#define MIN_SAMPLING_RATE			(10000)
+#define DEF_SAMPLING_RATE			(25000)
 
-static unsigned int min_sampling_rate;
+static unsigned int min_sampling_rate = MIN_SAMPLING_RATE;
 
 #define LATENCY_MULTIPLIER			(1000)
 #define MIN_LATENCY_MULTIPLIER			(100)
@@ -531,14 +533,22 @@ static int cpufreq_governor_dbs(struct cpufreq_policy *policy,
 			 * conservative does not implement micro like ondemand
 			 * governor, thus we are bound to jiffes/HZ
 			 */
+
+/* moddingg33k edit:
+ * 	simplified sampling rate determination
+ */
+			min_sampling_rate = MIN_SAMPLING_RATE;
+			dbs_tuners_ins.sampling_rate = DEF_SAMPLING_RATE;
+#if 0
 			min_sampling_rate =
-				MIN_SAMPLING_RATE_RATIO * jiffies_to_usecs(10);
+				MIN_SAMPLING_RATE_RATIO * jiffies_to_usecs(100);
 			/* Bring kernel and HW constraints together */
 			min_sampling_rate = max(min_sampling_rate,
 					MIN_LATENCY_MULTIPLIER * latency);
 			dbs_tuners_ins.sampling_rate =
 				max(min_sampling_rate,
 				    latency * LATENCY_MULTIPLIER);
+#endif /* moddingg33k END */
 
 			cpufreq_register_notifier(
 					&dbs_cpufreq_notifier_block,
