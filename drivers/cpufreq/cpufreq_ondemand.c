@@ -111,12 +111,14 @@ static DEFINE_MUTEX(dbs_mutex);
 static struct dbs_tuners {
 	unsigned int sampling_rate;
 	unsigned int up_threshold;
+	unsigned int min_threshold;
 	unsigned int ignore_nice;
 	unsigned int sampling_down_factor;
 	unsigned int powersave_bias;
 	unsigned int io_is_busy;
 } dbs_tuners_ins = {
 	.up_threshold = DEF_FREQUENCY_UP_THRESHOLD,
+	.min_threshold = MIN_FREQUENCY_UP_THRESHOLD,
 	.sampling_down_factor = DEF_SAMPLING_DOWN_FACTOR,
 	.ignore_nice = 0,
 	.powersave_bias = 0,
@@ -256,6 +258,7 @@ static ssize_t show_##file_name						\
 show_one(sampling_rate, sampling_rate);
 show_one(io_is_busy, io_is_busy);
 show_one(up_threshold, up_threshold);
+show_one(min_threshold, min_threshold);
 show_one(sampling_down_factor, sampling_down_factor);
 show_one(ignore_nice_load, ignore_nice);
 show_one(powersave_bias, powersave_bias);
@@ -356,6 +359,20 @@ static ssize_t store_up_threshold(struct kobject *a, struct attribute *b,
 	return count;
 }
 
+static ssize_t store_min_threshold(struct kobject *a, struct attribute *b,
+				  const char *buf, size_t count)
+{
+	unsigned int input;
+	int ret;
+	ret = sscanf(buf, "%u", &input);
+
+	if (ret != 1 || input > (MAX_FREQUENCY_UP_THRESHOLD - 1)) {
+		return -EINVAL;
+	}
+	dbs_tuners_ins.min_threshold = input;
+	return count;
+}
+
 static ssize_t store_sampling_down_factor(struct kobject *a,
 			struct attribute *b, const char *buf, size_t count)
 {
@@ -430,6 +447,7 @@ static ssize_t store_powersave_bias(struct kobject *a, struct attribute *b,
 define_one_global_rw(sampling_rate);
 define_one_global_rw(io_is_busy);
 define_one_global_rw(up_threshold);
+define_one_global_rw(min_threshold);
 define_one_global_rw(sampling_down_factor);
 define_one_global_rw(ignore_nice_load);
 define_one_global_rw(powersave_bias);
@@ -438,6 +456,7 @@ static struct attribute *dbs_attributes[] = {
 	&sampling_rate_min.attr,
 	&sampling_rate.attr,
 	&up_threshold.attr,
+	&min_threshold.attr,
 	&sampling_down_factor.attr,
 	&ignore_nice_load.attr,
 	&powersave_bias.attr,
@@ -478,17 +497,15 @@ static void dbs_check_cpu(struct cpu_dbs_info_s *this_dbs_info)
 
 	/*
 	 * Every sampling_rate, we check, if current idle time is less
-	 * than 20% (default), then we try to increase frequency
-	 * Every sampling_rate, we look for a the lowest
-	 * frequency which can sustain the load while keeping idle time over
-	 * 30%. If such a frequency exist, we try to decrease to this frequency.
+	 * than 20% (default), then we try to change frequency proportional
+	 * to load.
 	 *
-	 * Any frequency increase takes it to the maximum frequency.
-	 * Frequency reduction happens at minimum steps of
-	 * 5% (default) of current frequency
+	 * If load is above up_threshold we jump to max frequency,
+	 * else if it's below min_threshold we set it to min. In both
+	 * cases we break out early.
 	 */
 
-	/* Get Absolute Load */
+	/* Get Absolute Max Load of busiest core */
 	for_each_cpu(j, policy->cpus) {
 		struct cpu_dbs_info_s *j_dbs_info;
 		cputime64_t cur_wall_time, cur_idle_time, cur_iowait_time;
@@ -588,13 +605,27 @@ static void dbs_check_cpu(struct cpu_dbs_info_s *this_dbs_info)
 			max_load = load;
 	}
 
-	/* Check for frequency increase */
+	cpufreq_notify_utilization(policy, max_load);
+
+	/* Check for frequency change */
 	if (max_load > dbs_tuners_ins.up_threshold) {
-		/* If switching to max speed, apply sampling_down_factor */
-		if (policy->cur < policy->max)
+		/* Jump to MAX frequency */
+		if (policy->cur < policy->max) {
+			/* If switching to max speed, apply sampling_down_factor */
 			this_dbs_info->rate_mult =
 				dbs_tuners_ins.sampling_down_factor;
-		dbs_freq_increase(policy, policy->max);
+
+			dbs_freq_increase(policy, policy->max);
+		}
+	} else if (max_load < dbs_tuners_ins.min_threshold) {
+		/* Jump to MIN frequency */
+		if (policy->cur > policy->min) {
+			/* No longer fully busy, reset rate_mult */
+			this_dbs_info->rate_mult = 1;
+
+			__cpufreq_driver_target(policy, policy->min,
+						CPUFREQ_RELATION_L);
+		}
 	} else {
 		/* Calculate the next frequency proportional to load */
 		unsigned int freq_next, min_f, max_f;
@@ -606,9 +637,6 @@ static void dbs_check_cpu(struct cpu_dbs_info_s *this_dbs_info)
 		/* No longer fully busy, reset rate_mult */
 		this_dbs_info->rate_mult = 1;
 
-		if (freq_next < policy->min)
-			freq_next = policy->min;
-
 		if (!dbs_tuners_ins.powersave_bias) {
 			__cpufreq_driver_target(policy, freq_next,
 					CPUFREQ_RELATION_C);
@@ -616,7 +644,7 @@ static void dbs_check_cpu(struct cpu_dbs_info_s *this_dbs_info)
 			int freq = powersave_bias_target(policy, freq_next,
 					CPUFREQ_RELATION_L);
 			__cpufreq_driver_target(policy, freq,
-				CPUFREQ_RELATION_C);
+				CPUFREQ_RELATION_L);
 		}
 	}
 }
