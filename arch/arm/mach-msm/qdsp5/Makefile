@@ -18,3 +18,5 @@ obj-y += snd.o snd_cad.o snd_adie.o audio_acdb.o
 obj-$(CONFIG_ARCH_MSM7X27A) += audio_fm.o
 obj-$(CONFIG_ARCH_MSM7X27A) += audio_mvs.o
 obj-$(CONFIG_ARCH_MSM7X27A) += audio_lpa.o audio_ac3.o
+
+CFLAGS_adsp.o += -Wno-sizeof-pointer-memaccess
