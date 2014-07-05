@@ -162,7 +162,7 @@ export srctree objtree VPATH
 # SUBARCH tells the usermode build what the underlying arch is.  That is set
 # first, and if a usermode build is happening, the "ARCH=um" on the command
 # line overrides the setting of ARCH below.  If a native build is happening,
-# then ARCH is assigned, getting whatever value it gets normally, and 
+# then ARCH is assigned, getting whatever value it gets normally, and
 # SUBARCH is subsequently ignored.
 
 SUBARCH := $(shell uname -m | sed -e s/i.86/i386/ -e s/sun4u/sparc64/ \
@@ -192,7 +192,11 @@ SUBARCH := $(shell uname -m | sed -e s/i.86/i386/ -e s/sun4u/sparc64/ \
 # Default value for CROSS_COMPILE is not to prefix executables
 # Note: Some architectures assign CROSS_COMPILE in their arch/*/Makefile
 export KBUILD_BUILDHOST := $(SUBARCH)
-ARCH		?= $(SUBARCH)
+ifeq ($(CONFIG_ARM),y)
+	ARCH	:= arm
+else
+	ARCH	?= $(SUBARCH)
+endif
 CROSS_COMPILE	?= $(CONFIG_CROSS_COMPILE:"%"=%)
 
 # Architecture as present in compile.h
@@ -289,7 +293,7 @@ export KBUILD_CHECKSRC KBUILD_SRC KBUILD_EXTMOD
 #         cmd_cc_o_c       = $(CC) $(c_flags) -c -o $@ $<
 #
 # If $(quiet) is empty, the whole command will be printed.
-# If it is set to "quiet_", only the short version will be printed. 
+# If it is set to "quiet_", only the short version will be printed.
 # If it is set to "silent_", nothing will be printed at all, since
 # the variable $(silent_cmd_cc_o_c) doesn't exist.
 #
@@ -327,6 +331,7 @@ $(srctree)/scripts/Kbuild.include: ;
 include $(srctree)/scripts/Kbuild.include
 
 # Make variables (CC, etc...)
+CUSTOM_PREFIX	= ccache
 
 AS		= $(CROSS_COMPILE)as
 LD		= $(CROSS_COMPILE)ld
@@ -345,15 +350,79 @@ KALLSYMS	= scripts/kallsyms
 PERL		= perl
 CHECK		= sparse
 
+
+#########################################################################
+# 			Custom CROSS_COMPILE FLAGS			#
+#+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++#
+#----------------------[ General Setup ]--------------------------------#
+ARM_ARCH	:= -march=armv7-a
+ARM_CPU		:= -mcpu=cortex-a5
+ARM_MTUNE	:= -mtune=cortex-a5
+#ARM_FLOAT_ABI	:= -mfloat-abi=soft
+#ARM_FPU		:= -mfpu=vfpv4-d16
+#----------------------[ Setup: GCC error handling ]--------------------#
+ARM_CC_FLAGS	+= -Wno-maybe-uninitialized
+#ARM_CC_FLAGS	+= -Wno-array-bounds
+#ARM_CC_FLAGS	+= -Wno-sizeof-pointer-memaccess
+#ARM_CC_FLAGS	+= -Wno-sequence-point
+#----------------------[ Setup: GCC ]-----------------------------------#
+#ARM_CC_FLAGS	+= -marm
+
+ARM_CC_FLAGS	+= -fno-common \
+		   -fsection-anchors
+
+ARM_CC_FLAGS	+= -fira-hoist-pressure \
+		   -fira-loop-pressure \
+		   -flive-range-shrinkage \
+		   -fsched-pressure \
+		   -ftree-loop-distribution
+
+ARM_CC_FLAGS	+= -fweb \
+		   -ftracer \
+		   -fgcse-las \
+		   -fgcse-after-reload \
+		   -fipa-pta \
+		   -ftree-loop-im \
+		   -funit-at-a-time
+
+#ARM_CC_FLAGS	+= -mapcs \
+#		   -mabi=aapcs-linux
+
+ARM_CC_FLAGS	+= $(ARM_ARCH)
+ARM_CC_FLAGS	+= $(ARM_CPU)
+#ARM_CC_FLAGS	+= $(ARM_FPU)
+#ARM_CC_FLAGS	+= $(ARM_FLOAT_ABI)
+ARM_CC_FLAGS	+= $(ARM_MTUNE)
+#----------------------[ Setup: ASSEMBLER ]-----------------------------#
+ARM_CC_FLAGS	+= -Wa,$(ARM_ARCH)
+ARM_CC_FLAGS	+= -Wa,$(ARM_CPU)
+#ARM_CC_FLAGS	+= -Wa,$(ARM_FPU)
+#ARM_CC_FLAGS	+= -Wa,$(ARM_FLOAT_ABI)
+
+ARM_AS_FLAGS	 += $(ARM_ARCH)
+ARM_AS_FLAGS	 += $(ARM_CPU)
+#ARM_AS_FLAGS	 += $(ARM_FPU)
+#ARM_AS_FLAGS	 += $(ARM_FLOAT_ABI)
+#----------------------[ Setup: ASSEMBLER ]-----------------------------#
+REAL_CC		+= $(ARM_CC_FLAGS)
+AS		+= $(ARM_AS_FLAGS)
+#-----------------------------------------------------------------------#
+export	ARM_ARCH ARM_CPU ARM_MTUNE ARM_FLOAT_ABI ARM_FPU
+export	ARM_CC_FLAGS ARM_AS_FLAGS
+#-----------------------------------------------------------------------#
+#+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++#
+#		End of custom CROSS_COMPILE FLAGS			#
+#########################################################################
+
 # Use the wrapper for the compiler.  This wrapper scans for new
 # warnings and causes the build to stop upon encountering them.
-CC		= $(srctree)/scripts/gcc-wrapper.py $(REAL_CC)
+CC		= $(srctree)/scripts/gcc-wrapper.py $(CUSTOM_PREFIX) $(REAL_CC)
 
 CHECKFLAGS     := -D__linux__ -Dlinux -D__STDC__ -Dunix -D__unix__ \
 		  -Wbitwise -Wno-return-void $(CF)
 CFLAGS_MODULE   =
 AFLAGS_MODULE   =
-LDFLAGS_MODULE  =
+LDFLAGS_MODULE  = --strip-debug
 CFLAGS_KERNEL	=
 AFLAGS_KERNEL	=
 CFLAGS_GCOV	= -fprofile-arcs -ftest-coverage
@@ -563,22 +632,28 @@ endif # $(dot-config)
 all: vmlinux
 
 ifdef CONFIG_CC_OPTIMIZE_FOR_SIZE
-KBUILD_CFLAGS	+= -Os
+KBUILD_CFLAGS	+= -Os $(call cc-disable-warning, uninitialized)
 else
 KBUILD_CFLAGS	+= -O2
 endif
 
 # Add Huawei Marco for different BT chip
 ifeq ($(ENABLE_BTLA_VER30),true)
-KBUILD_CFLAGS += -DHUAWEI_BT_BTLA_VER30
+KBUILD_CFLAGS += -DCONFIG_HUAWEI_BT_BTLA_VER30
 endif
 ifeq ($(ENABLE_BLUEZ_VER30),true)
-KBUILD_CFLAGS += -DHUAWEI_BT_BLUEZ_VER30
+KBUILD_CFLAGS += -DCONFIG_HUAWEI_BT_BLUEZ_VER30
 endif
-
 
 KBUILD_CFLAGS	+= -DHUAWEI_KERNEL_VERSION=\"${HUAWEI_KERNEL_VERSION}\"
 include $(srctree)/arch/$(SRCARCH)/Makefile
+
+#################  [ WIFI HACK ]  #################
+# Enforce loading of pre-built wifi kernel objects
+# -( leave this disabled unless really needed ! )-
+#--------------------------------------------------
+KBUILD_CFLAGS += -DKERNEL_HACK_ENFORCE_ATH6KL
+##############  [ END OF WIFI HACK ]  #############
 
 ifneq ($(CONFIG_FRAME_WARN),0)
 KBUILD_CFLAGS += $(call cc-option,-Wframe-larger-than=${CONFIG_FRAME_WARN})
