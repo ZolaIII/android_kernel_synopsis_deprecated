@@ -1744,17 +1744,10 @@ int unregister_console(struct console *console)
 }
 EXPORT_SYMBOL(unregister_console);
 
-#ifdef CONFIG_HUAWEI_KERNEL
-extern void save_address_to_crash_dump(const char *fmt, ...);
-#endif
-
 static int __init printk_late_init(void)
 {
 	struct console *con;
 
-#if defined(CONFIG_HUAWEI_KERNEL) && defined(CONFIG_PRINTK)
-    save_address_to_crash_dump(" __log_buf=%p-%d;", virt_to_phys(__log_buf), sizeof(__log_buf));
-#endif
 	for_each_console(con) {
 		if (!keep_bootcon && con->flags & CON_BOOT) {
 			printk(KERN_INFO "turn off boot console %s%d\n",

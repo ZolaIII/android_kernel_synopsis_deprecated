@@ -16,9 +16,12 @@
 ** GNU General Public License for more details.
 */
 
+#define pr_fmt(fmt) "ashmem: " fmt
+
 #include <linux/module.h>
 #include <linux/file.h>
 #include <linux/fs.h>
+#include <linux/falloc.h>
 #include <linux/miscdevice.h>
 #include <linux/security.h>
 #include <linux/mm.h>
@@ -224,21 +227,29 @@ static ssize_t ashmem_read(struct file *file, char __user *buf,
 
 	/* If size is not set, or set to 0, always return EOF. */
 	if (asma->size == 0)
-		goto out;
+		goto out_unlock;
 
 	if (!asma->file) {
 		ret = -EBADF;
-		goto out;
+		goto out_unlock;
 	}
 
+	mutex_unlock(&ashmem_mutex);
+
+	/*
+	 * asma and asma->file are used outside the lock here.  We assume
+	 * once asma->file is set it will never be changed, and will not
+	 * be destroyed until all references to the file are dropped and
+	 * ashmem_release is called.
+	 */
 	ret = asma->file->f_op->read(asma->file, buf, len, pos);
-	if (ret < 0)
-		goto out;
+	if (ret >= 0) {
+		/** Update backing file pos, since f_ops->read() doesn't */
+		asma->file->f_pos = *pos;
+	}
+	return ret;
 
-	/** Update backing file pos, since f_ops->read() doesn't */
-	asma->file->f_pos = *pos;
-
-out:
+out_unlock:
 	mutex_unlock(&ashmem_mutex);
 	return ret;
 }
@@ -272,7 +283,7 @@ out:
 	return ret;
 }
 
-static inline unsigned long calc_vm_may_flags(unsigned long prot)
+static inline vm_flags_t calc_vm_may_flags(unsigned long prot)
 {
 	return _calc_vm_trans(prot, PROT_READ,  VM_MAYREAD) |
 	       _calc_vm_trans(prot, PROT_WRITE, VM_MAYWRITE) |
@@ -357,27 +368,14 @@ static int ashmem_shrink(struct shrinker *s, struct shrink_control *sc)
 	if (!sc->nr_to_scan)
 		return lru_count;
 
-	/* android bug:When system memory is on low sate, some application (such as:SmsReceiverServ thread) 
-	will allocate memory while holding the ashmem_mutex in ashmem_mmap function may try to directly 
-	reclaim memory. Then ashmem_shrink() is called in same thread. It will deadlock at acquiring ashmem_mutex.
-	This change lets ashmem_shrink() return failure if ashmem_mutex is not
-	available instantly. Memory will be reclaimed from other shrinks.*/
-#ifdef CONFIG_HUAWEI_KERNEL	
-	if (!mutex_trylock(&ashmem_mutex))
-	{
-		printk(KERN_ERR "%s:get ashmem_mutex failed! \n",__func__);
-		return -EINVAL;
-	}
-#else
-    mutex_lock(&ashmem_mutex);
-#endif
-	
+	mutex_lock(&ashmem_mutex);
 	list_for_each_entry_safe(range, next, &ashmem_lru_list, lru) {
-		struct inode *inode = range->asma->file->f_dentry->d_inode;
 		loff_t start = range->pgstart * PAGE_SIZE;
-		loff_t end = (range->pgend + 1) * PAGE_SIZE - 1;
+		loff_t end = (range->pgend + 1) * PAGE_SIZE;
 
-		vmtruncate_range(inode, start, end);
+		do_fallocate(range->asma->file,
+				FALLOC_FL_PUNCH_HOLE | FALLOC_FL_KEEP_SIZE,
+				start, end - start);
 		range->purged = ASHMEM_WAS_PURGED;
 		lru_del(range);
 
@@ -420,50 +418,68 @@ out:
 
 static int set_name(struct ashmem_area *asma, void __user *name)
 {
+	int len;
 	int ret = 0;
+	char local_name[ASHMEM_NAME_LEN];
 
+	/*
+	 * Holding the ashmem_mutex while doing a copy_from_user might cause
+	 * an data abort which would try to access mmap_sem. If another
+	 * thread has invoked ashmem_mmap then it will be holding the
+	 * semaphore and will be waiting for ashmem_mutex, there by leading to
+	 * deadlock. We'll release the mutex  and take the name to a local
+	 * variable that does not need protection and later copy the local
+	 * variable to the structure member with lock held.
+	 */
+	len = strncpy_from_user(local_name, name, ASHMEM_NAME_LEN);
+	if (len < 0)
+		return len;
+	if (len == ASHMEM_NAME_LEN)
+		local_name[ASHMEM_NAME_LEN - 1] = '\0';
 	mutex_lock(&ashmem_mutex);
-
 	/* cannot change an existing mapping's name */
-	if (unlikely(asma->file)) {
+	if (unlikely(asma->file))
 		ret = -EINVAL;
-		goto out;
-	}
+	else
+		strcpy(asma->name + ASHMEM_NAME_PREFIX_LEN, local_name);
 
-	if (unlikely(copy_from_user(asma->name + ASHMEM_NAME_PREFIX_LEN,
-				    name, ASHMEM_NAME_LEN)))
-		ret = -EFAULT;
-	asma->name[ASHMEM_FULL_NAME_LEN-1] = '\0';
-
-out:
 	mutex_unlock(&ashmem_mutex);
-
 	return ret;
 }
 
 static int get_name(struct ashmem_area *asma, void __user *name)
 {
 	int ret = 0;
+	size_t len;
+	/*
+	 * Have a local variable to which we'll copy the content
+	 * from asma with the lock held. Later we can copy this to the user
+	 * space safely without holding any locks. So even if we proceed to
+	 * wait for mmap_sem, it won't lead to deadlock.
+	 */
+	char local_name[ASHMEM_NAME_LEN];
 
 	mutex_lock(&ashmem_mutex);
 	if (asma->name[ASHMEM_NAME_PREFIX_LEN] != '\0') {
-		size_t len;
 
 		/*
 		 * Copying only `len', instead of ASHMEM_NAME_LEN, bytes
 		 * prevents us from revealing one user's stack to another.
 		 */
 		len = strlen(asma->name + ASHMEM_NAME_PREFIX_LEN) + 1;
-		if (unlikely(copy_to_user(name,
-				asma->name + ASHMEM_NAME_PREFIX_LEN, len)))
-			ret = -EFAULT;
+		memcpy(local_name, asma->name + ASHMEM_NAME_PREFIX_LEN, len);
 	} else {
-		if (unlikely(copy_to_user(name, ASHMEM_NAME_DEF,
-					  sizeof(ASHMEM_NAME_DEF))))
-			ret = -EFAULT;
+		len = sizeof(ASHMEM_NAME_DEF);
+		memcpy(local_name, ASHMEM_NAME_DEF, len);
 	}
 	mutex_unlock(&ashmem_mutex);
 
+	/*
+	 * Now we are just copying from the stack variable to userland
+	 * No lock held
+	 */
+	if (unlikely(copy_to_user(name, local_name, len)))
+		ret = -EFAULT;
 	return ret;
 }
 
@@ -687,7 +703,6 @@ done:
 }
 #endif
 
-#ifndef CONFIG_HUAWEI_KERNEL
 static int ashmem_cache_op(struct ashmem_area *asma,
 	void (*cache_func)(unsigned long vstart, unsigned long length,
 				unsigned long pstart))
@@ -732,39 +747,9 @@ done:
 		asma->vm_start = 0;
 	return ret;
 }
-#else /* #ifndef CONFIG_HUAWEI_KERNEL */
-static int ashmem_cache_op(struct ashmem_area *asma,
-	void (*cache_func)(unsigned long vstart, unsigned long length,
-				unsigned long pstart))
-{
-    int ret = 0;
-#ifdef CONFIG_OUTER_CACHE
-	unsigned long vaddr;
-#endif
-	mutex_lock(&ashmem_mutex);
-#ifndef CONFIG_OUTER_CACHE
-	cache_func(asma->vm_start, asma->size, 0);
-#else
-	for (vaddr = asma->vm_start; vaddr < asma->vm_start + asma->size;
-		vaddr += PAGE_SIZE) {
-		unsigned long physaddr;
-		physaddr = virtaddr_to_physaddr(vaddr);
-        if (!physaddr)
-        {
-            ret = -EINVAL;
-            goto done;
-		}
-		cache_func(vaddr, PAGE_SIZE, physaddr);
-	}
-#endif
 
-done:
-	mutex_unlock(&ashmem_mutex);
-	return ret;
-}
-#endif
-
-static long ashmem_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
+static long ashmem_ioctl(struct file *file, unsigned int cmd,
+					unsigned long arg)
 {
 	struct ashmem_area *asma = file->private_data;
 	long ret = -ENOTTY;
@@ -901,7 +886,7 @@ static int __init ashmem_init(void)
 					  sizeof(struct ashmem_area),
 					  0, 0, NULL);
 	if (unlikely(!ashmem_area_cachep)) {
-		printk(KERN_ERR "ashmem: failed to create slab cache\n");
+		pr_err("failed to create slab cache\n");
 		return -ENOMEM;
 	}
 
@@ -909,19 +894,19 @@ static int __init ashmem_init(void)
 					  sizeof(struct ashmem_range),
 					  0, 0, NULL);
 	if (unlikely(!ashmem_range_cachep)) {
-		printk(KERN_ERR "ashmem: failed to create slab cache\n");
+		pr_err("failed to create slab cache\n");
 		return -ENOMEM;
 	}
 
 	ret = misc_register(&ashmem_misc);
 	if (unlikely(ret)) {
-		printk(KERN_ERR "ashmem: failed to register misc device!\n");
+		pr_err("failed to register misc device!\n");
 		return ret;
 	}
 
 	register_shrinker(&ashmem_shrinker);
 
-	printk(KERN_INFO "ashmem: initialized\n");
+	pr_info("initialized\n");
 
 	return 0;
 }
@@ -934,12 +919,12 @@ static void __exit ashmem_exit(void)
 
 	ret = misc_deregister(&ashmem_misc);
 	if (unlikely(ret))
-		printk(KERN_ERR "ashmem: failed to unregister misc device!\n");
+		pr_err("failed to unregister misc device!\n");
 
 	kmem_cache_destroy(ashmem_range_cachep);
 	kmem_cache_destroy(ashmem_area_cachep);
 
-	printk(KERN_INFO "ashmem: unloaded\n");
+	pr_info("unloaded\n");
 }
 
 module_init(ashmem_init);

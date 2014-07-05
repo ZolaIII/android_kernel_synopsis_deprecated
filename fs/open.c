@@ -862,11 +862,18 @@ EXPORT_SYMBOL(put_unused_fd);
  *
  * It should never happen - if we allow dup2() do it, _really_ bad things
  * will follow.
+ *
+ * NOTE: __fd_install() variant is really, really low-level; don't
+ * use it unless you are forced to by truly lousy API shoved down
+ * your throat.  'files' *MUST* be either current->files or obtained
+ * by get_files_struct(current) done by whoever had given it to you,
+ * or really bad things will happen.  Normally you want to use
+ * fd_install() instead.
  */
 
-void fd_install(unsigned int fd, struct file *file)
+void __fd_install(struct files_struct *files, unsigned int fd,
+		struct file *file)
 {
-	struct files_struct *files = current->files;
 	struct fdtable *fdt;
 	spin_lock(&files->file_lock);
 	fdt = files_fdtable(files);
@@ -875,7 +882,37 @@ void fd_install(unsigned int fd, struct file *file)
 	spin_unlock(&files->file_lock);
 }
 
+void fd_install(unsigned int fd, struct file *file)
+{
+	__fd_install(current->files, fd, file);
+}
 EXPORT_SYMBOL(fd_install);
+
+/*
+ * The same warnings as for __alloc_fd()/__fd_install() apply here...
+ */
+int __close_fd(struct files_struct *files, unsigned fd)
+{
+	struct file *file;
+	struct fdtable *fdt;
+
+	spin_lock(&files->file_lock);
+	fdt = files_fdtable(files);
+	if (fd >= fdt->max_fds)
+		goto out_unlock;
+	file = fdt->fd[fd];
+	if (!file)
+		goto out_unlock;
+	rcu_assign_pointer(fdt->fd[fd], NULL);
+	__clear_close_on_exec(fd, fdt);
+	__put_unused_fd(files, fd);
+	spin_unlock(&files->file_lock);
+	return filp_close(file, files);
+
+out_unlock:
+	spin_unlock(&files->file_lock);
+	return -EBADF;
+}
 
 static inline int build_open_flags(int flags, umode_t mode, struct open_flags *op)
 {
@@ -1067,23 +1104,7 @@ EXPORT_SYMBOL(filp_close);
  */
 SYSCALL_DEFINE1(close, unsigned int, fd)
 {
-	struct file * filp;
-	struct files_struct *files = current->files;
-	struct fdtable *fdt;
-	int retval;
-
-	spin_lock(&files->file_lock);
-	fdt = files_fdtable(files);
-	if (fd >= fdt->max_fds)
-		goto out_unlock;
-	filp = fdt->fd[fd];
-	if (!filp)
-		goto out_unlock;
-	rcu_assign_pointer(fdt->fd[fd], NULL);
-	__clear_close_on_exec(fd, fdt);
-	__put_unused_fd(files, fd);
-	spin_unlock(&files->file_lock);
-	retval = filp_close(filp, files);
+	int retval = __close_fd(current->files, fd);
 
 	/* can't restart close syscall because file table entry was cleared */
 	if (unlikely(retval == -ERESTARTSYS ||
@@ -1093,10 +1114,6 @@ SYSCALL_DEFINE1(close, unsigned int, fd)
 		retval = -EINTR;
 
 	return retval;
-
-out_unlock:
-	spin_unlock(&files->file_lock);
-	return -EBADF;
 }
 EXPORT_SYMBOL(sys_close);
 
