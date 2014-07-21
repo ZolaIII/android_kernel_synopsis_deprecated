@@ -12,6 +12,7 @@
 
 #include "lcd_hw_debug.h"
 
+#if 0
 /* The following function is used to get a new line from the config file */
 static char * fget_line(char * buf, int max_num, int fd,off_t *fd_seek)
 {
@@ -168,3 +169,14 @@ bool lcd_debug_free_para(void *para_table)
 	printk("The new LCD config region has been freed\n");
     return TRUE;
 }
+#else
+bool lcd_debug_malloc_get_para(char *para_name, void **para_table,uint32_t *para_num)
+{
+	return 0;
+}
+
+bool lcd_debug_free_para(void *para_table)
+{
+	return 0;
+}
+#endif
