@@ -47,7 +47,7 @@ static struct zram *zram_devices;
 #define ALLOC_ERROR_LOG_RATE_MS 1000
 
 /* Module params (documentation at end) */
-static unsigned int num_devices = 1;
+static unsigned int num_devices = 2;
 
 #define ZRAM_ATTR_RO(name)						\
 static ssize_t zram_attr_##name##_show(struct device *d,		\
