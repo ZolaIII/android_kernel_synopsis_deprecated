@@ -373,7 +373,6 @@ ARM_CC_FLAGS	+= -fno-common \
 
 ARM_CC_FLAGS	+= -fira-hoist-pressure \
 		   -fira-loop-pressure \
-		   -flive-range-shrinkage \
 		   -fsched-pressure \
 		   -ftree-loop-distribution
 
