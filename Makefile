@@ -368,21 +368,21 @@ ARM_CC_FLAGS	+= -Wno-maybe-uninitialized
 #----------------------[ Setup: GCC ]-----------------------------------#
 #ARM_CC_FLAGS	+= -marm
 
-ARM_CC_FLAGS	+= -fno-common \
-		   -fsection-anchors
+#ARM_CC_FLAGS	+= -fno-common \
+#		   -fsection-anchors
 
-ARM_CC_FLAGS	+= -fira-hoist-pressure \
-		   -fira-loop-pressure \
-		   -fsched-pressure \
-		   -ftree-loop-distribution
+#ARM_CC_FLAGS	+= -fira-hoist-pressure \
+#		   -fira-loop-pressure \
+#		   -fsched-pressure \
+#		   -ftree-loop-distribution
 
-ARM_CC_FLAGS	+= -fweb \
-		   -ftracer \
-		   -fgcse-las \
-		   -fgcse-after-reload \
-		   -fipa-pta \
-		   -ftree-loop-im \
-		   -funit-at-a-time
+#ARM_CC_FLAGS	+= -fweb \
+#		   -ftracer \
+#		   -fgcse-las \
+#		   -fgcse-after-reload \
+#		   -fipa-pta \
+#		   -ftree-loop-im \
+#		   -funit-at-a-time
 
 #ARM_CC_FLAGS	+= -mapcs \
 #		   -mabi=aapcs-linux
