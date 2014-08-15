@@ -366,7 +366,7 @@ static ssize_t store_min_threshold(struct kobject *a, struct attribute *b,
 	int ret;
 	ret = sscanf(buf, "%u", &input);
 
-	if (ret != 1 || input > (MAX_FREQUENCY_UP_THRESHOLD - 1)) {
+	if (ret != 1 || input > (dbs_tuners_ins.up_threshold - 1)) {
 		return -EINVAL;
 	}
 	dbs_tuners_ins.min_threshold = input;
@@ -489,11 +489,14 @@ static void dbs_check_cpu(struct cpu_dbs_info_s *this_dbs_info)
 	unsigned int sampling_rate;
 	unsigned int j;
 
-	sampling_rate = dbs_tuners_ins.sampling_rate;
-	sampling_rate *= this_dbs_info->rate_mult;
+	policy = this_dbs_info->cur_policy;
+	if (policy == NULL)
+		return;
 
 	this_dbs_info->freq_lo = 0;
-	policy = this_dbs_info->cur_policy;
+
+	sampling_rate = dbs_tuners_ins.sampling_rate;
+	sampling_rate *= this_dbs_info->rate_mult;
 
 	/*
 	 * Every sampling_rate, we check, if current idle time is less
@@ -609,24 +612,16 @@ static void dbs_check_cpu(struct cpu_dbs_info_s *this_dbs_info)
 
 	/* Check for frequency change */
 	if (max_load > dbs_tuners_ins.up_threshold) {
-		/* Jump to MAX frequency */
 		if (policy->cur < policy->max) {
+		/* Jump to MAX frequency */
+
 			/* If switching to max speed, apply sampling_down_factor */
 			this_dbs_info->rate_mult =
 				dbs_tuners_ins.sampling_down_factor;
 
 			dbs_freq_increase(policy, policy->max);
 		}
-	} else if (max_load < dbs_tuners_ins.min_threshold) {
-		/* Jump to MIN frequency */
-		if (policy->cur > policy->min) {
-			/* No longer fully busy, reset rate_mult */
-			this_dbs_info->rate_mult = 1;
-
-			__cpufreq_driver_target(policy, policy->min,
-						CPUFREQ_RELATION_L);
-		}
-	} else {
+	} else if (max_load > dbs_tuners_ins.min_threshold) {
 		/* Calculate the next frequency proportional to load */
 		unsigned int freq_next, min_f, max_f;
 
@@ -645,6 +640,16 @@ static void dbs_check_cpu(struct cpu_dbs_info_s *this_dbs_info)
 					CPUFREQ_RELATION_L);
 			__cpufreq_driver_target(policy, freq,
 				CPUFREQ_RELATION_L);
+		}
+	} else {
+		if (policy->cur > policy->min) {
+		/* Jump to MIN frequency */
+
+		/* No longer fully busy, reset rate_mult */
+		this_dbs_info->rate_mult = 1;
+
+		__cpufreq_driver_target(policy, policy->min,
+					CPUFREQ_RELATION_L);
 		}
 	}
 }
